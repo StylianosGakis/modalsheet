@@ -4,9 +4,10 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
@@ -58,18 +59,18 @@ internal fun FullscreenPopup(
     val currentContent by rememberUpdatedState(content)
     val popupId = rememberSaveable { UUID.randomUUID() }
     val popupLayout = remember {
-        PopupLayout(
-            onSystemBack = onSystemBack,
-            composeView = view,
+            PopupLayout(
+                onSystemBack = onSystemBack,
+                composeView = view,
             popupId = popupId
-        ).apply {
-            setContent(parentComposition) {
-                Box(Modifier.semantics { this.popup() }) {
-                    currentContent()
+            ).apply {
+                setContent(parentComposition) {
+                    Box(Modifier.semantics { this.popup() }) {
+                        currentContent()
+                    }
                 }
             }
         }
-    }
 
     DisposableEffect(popupLayout) {
         popupLayout.show()
@@ -144,37 +145,31 @@ private class PopupLayout(
         content()
     }
 
-    @Suppress("ReturnCount")
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK && onSystemBack != null) {
-            if (keyDispatcherState == null) {
-                return super.dispatchKeyEvent(event)
-            }
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                val state = keyDispatcherState
-                state?.startTracking(event, this)
-                return true
-            } else if (event.action == KeyEvent.ACTION_UP) {
-                val state = keyDispatcherState
-                if (state != null && state.isTracking(event) && !event.isCanceled) {
-                    onSystemBack?.invoke()
-                    return true
-                }
-            }
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    fun updateParameters(
-        onSystemBack: (() -> Unit)?
-    ) {
+    fun updateParameters(onSystemBack: (() -> Unit)?) {
+        onBackPressedCallback.remove()
         this.onSystemBack = onSystemBack
+        if (onSystemBack == null) return
+        val onBackPressedDispatcher = decorView.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
+        val lifecycleOwner = this.findViewTreeLifecycleOwner()
+        if (lifecycleOwner != null) {
+            onBackPressedDispatcher?.addCallback(lifecycleOwner, onBackPressedCallback)
+        } else {
+            onBackPressedDispatcher?.addCallback(onBackPressedCallback)
+        }
     }
 
     fun dismiss() {
         setViewTreeLifecycleOwner(null)
         decorView.removeView(this)
+        onBackPressedCallback.remove()
     }
+
+    private val onBackPressedCallback: OnBackPressedCallback =
+        object : OnBackPressedCallback(onSystemBack != null) {
+            override fun handleOnBackPressed() {
+                onSystemBack?.invoke()
+            }
+        }
 }
 
 private inline fun <reified T> findOwner(context: Context): T? {
