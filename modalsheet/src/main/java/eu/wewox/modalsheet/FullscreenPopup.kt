@@ -84,10 +84,11 @@ internal fun FullscreenPopup(
         }
     }
 
-    SideEffect {
+    DisposableEffect(onSystemBack) {
         popupLayout.updateParameters(
             onSystemBack = onSystemBack
         )
+        onDispose { }
     }
 }
 
@@ -145,18 +146,20 @@ private class PopupLayout(
         content()
     }
 
-    fun updateParameters(onSystemBack: (() -> Unit)?) {
-        onBackPressedCallback.remove()
-        this.onSystemBack = onSystemBack
-        if (onSystemBack == null) return
-        val onBackPressedDispatcher = decorView.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
-        val lifecycleOwner = this.findViewTreeLifecycleOwner()
-        if (lifecycleOwner != null) {
-            onBackPressedDispatcher?.addCallback(lifecycleOwner, onBackPressedCallback)
-        } else {
-            onBackPressedDispatcher?.addCallback(onBackPressedCallback)
-        }
+fun updateParameters(onSystemBack: (() -> Unit)?) {
+    onBackPressedCallback.isEnabled = false
+    onBackPressedCallback.remove()
+    this.onSystemBack = onSystemBack
+    if (onSystemBack == null) return
+    val onBackPressedDispatcher = decorView.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
+    val lifecycleOwner = this.findViewTreeLifecycleOwner()
+    onBackPressedCallback.isEnabled = true
+    if (lifecycleOwner != null) {
+        onBackPressedDispatcher?.addCallback(lifecycleOwner, onBackPressedCallback)
+    } else {
+        onBackPressedDispatcher?.addCallback(onBackPressedCallback)
     }
+}
 
     fun dismiss() {
         setViewTreeLifecycleOwner(null)
