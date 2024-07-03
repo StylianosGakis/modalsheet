@@ -6,17 +6,18 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.OnBackPressedCallback
-import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.ModalBottomSheetState
+import androidx.compose.material.ModalBottomSheetValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCompositionContext
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -34,6 +35,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
@@ -45,13 +47,12 @@ import java.util.UUID
  * * Adds the view to the decor view of the window, instead of the window itself.
  * * Do not have properties, as Popup is laid out as fullscreen.
  *
- * @param onSystemBack The action invoked by pressing the system back button.
  * @param content The content to be displayed inside the popup.
  */
 @ExperimentalSheetApi
 @Composable
 internal fun FullscreenPopup(
-    onSystemBack: (() -> Unit)? = null,
+    sheetState: ModalBottomSheetState,
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
@@ -60,7 +61,6 @@ internal fun FullscreenPopup(
     val popupId = rememberSaveable { UUID.randomUUID() }
     val popupLayout = remember {
             PopupLayout(
-                onSystemBack = onSystemBack,
                 composeView = view,
             popupId = popupId
             ).apply {
@@ -72,23 +72,24 @@ internal fun FullscreenPopup(
             }
         }
 
+    val coroutineScope = rememberCoroutineScope()
+    val sheetIsVisibleOrGoingToBeVisible =
+        sheetState.currentValue != ModalBottomSheetValue.Hidden || sheetState.targetValue != ModalBottomSheetValue.Hidden
+    BackHandler(sheetIsVisibleOrGoingToBeVisible) {
+        coroutineScope.launch {
+            sheetState.hide()
+        }.invokeOnCompletion {
+            popupLayout.disposeComposition()
+            popupLayout.dismiss()
+        }
+    }
     DisposableEffect(popupLayout) {
         popupLayout.show()
-        popupLayout.updateParameters(
-            onSystemBack = onSystemBack
-        )
         onDispose {
             popupLayout.disposeComposition()
             // Remove the window
             popupLayout.dismiss()
         }
-    }
-
-    DisposableEffect(onSystemBack) {
-        popupLayout.updateParameters(
-            onSystemBack = onSystemBack
-        )
-        onDispose { }
     }
 }
 
@@ -97,7 +98,6 @@ internal fun FullscreenPopup(
  */
 @SuppressLint("ViewConstructor")
 private class PopupLayout(
-    private var onSystemBack: (() -> Unit)?,
     composeView: View,
     popupId: UUID
 ) : AbstractComposeView(composeView.context),
@@ -146,33 +146,10 @@ private class PopupLayout(
         content()
     }
 
-fun updateParameters(onSystemBack: (() -> Unit)?) {
-    onBackPressedCallback.isEnabled = false
-    onBackPressedCallback.remove()
-    this.onSystemBack = onSystemBack
-    if (onSystemBack == null) return
-    val onBackPressedDispatcher = decorView.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher
-    val lifecycleOwner = this.findViewTreeLifecycleOwner()
-    onBackPressedCallback.isEnabled = true
-    if (lifecycleOwner != null) {
-        onBackPressedDispatcher?.addCallback(lifecycleOwner, onBackPressedCallback)
-    } else {
-        onBackPressedDispatcher?.addCallback(onBackPressedCallback)
-    }
-}
-
     fun dismiss() {
         setViewTreeLifecycleOwner(null)
         decorView.removeView(this)
-        onBackPressedCallback.remove()
     }
-
-    private val onBackPressedCallback: OnBackPressedCallback =
-        object : OnBackPressedCallback(onSystemBack != null) {
-            override fun handleOnBackPressed() {
-                onSystemBack?.invoke()
-            }
-        }
 }
 
 private inline fun <reified T> findOwner(context: Context): T? {

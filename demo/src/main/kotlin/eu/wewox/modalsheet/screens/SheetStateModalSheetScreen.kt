@@ -2,6 +2,7 @@
 
 package eu.wewox.modalsheet.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,8 +110,10 @@ private fun PageModalSheet(
 ) {
     ModalSheet(
         sheetState = sheetState,
-        onSystemBack = if (sheetState.isVisible || sheetState.currentValue != sheetState.targetValue) onPrev else null
     ) {
+        BackHandler(sheetState.isVisible || sheetState.currentValue != sheetState.targetValue) {
+            onPrev()
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(SpacingSmall),

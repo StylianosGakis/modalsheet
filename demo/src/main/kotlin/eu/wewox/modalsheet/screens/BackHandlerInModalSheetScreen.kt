@@ -67,7 +67,6 @@ private fun ThreeStatesModalSheet(
     ModalSheet(
         visible = visible,
         onVisibleChange = onVisibleChange,
-        onSystemBack = null,
     ) {
         var state by remember { mutableStateOf(0) }
 
