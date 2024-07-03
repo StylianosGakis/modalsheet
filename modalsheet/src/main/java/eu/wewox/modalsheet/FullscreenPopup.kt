@@ -4,18 +4,20 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.ModalBottomSheetState
+import androidx.compose.material.ModalBottomSheetValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCompositionContext
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -33,6 +35,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
@@ -44,13 +47,12 @@ import java.util.UUID
  * * Adds the view to the decor view of the window, instead of the window itself.
  * * Do not have properties, as Popup is laid out as fullscreen.
  *
- * @param onSystemBack The action invoked by pressing the system back button.
  * @param content The content to be displayed inside the popup.
  */
 @ExperimentalSheetApi
 @Composable
 internal fun FullscreenPopup(
-    onSystemBack: (() -> Unit)? = null,
+    sheetState: ModalBottomSheetState,
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
@@ -58,35 +60,36 @@ internal fun FullscreenPopup(
     val currentContent by rememberUpdatedState(content)
     val popupId = rememberSaveable { UUID.randomUUID() }
     val popupLayout = remember {
-        PopupLayout(
-            onSystemBack = onSystemBack,
-            composeView = view,
+            PopupLayout(
+                composeView = view,
             popupId = popupId
-        ).apply {
-            setContent(parentComposition) {
-                Box(Modifier.semantics { this.popup() }) {
-                    currentContent()
+            ).apply {
+                setContent(parentComposition) {
+                    Box(Modifier.semantics { this.popup() }) {
+                        currentContent()
+                    }
                 }
             }
         }
-    }
 
+    val coroutineScope = rememberCoroutineScope()
+    val sheetIsVisibleOrGoingToBeVisible =
+        sheetState.currentValue != ModalBottomSheetValue.Hidden || sheetState.targetValue != ModalBottomSheetValue.Hidden
+    BackHandler(sheetIsVisibleOrGoingToBeVisible) {
+        coroutineScope.launch {
+            sheetState.hide()
+        }.invokeOnCompletion {
+            popupLayout.disposeComposition()
+            popupLayout.dismiss()
+        }
+    }
     DisposableEffect(popupLayout) {
         popupLayout.show()
-        popupLayout.updateParameters(
-            onSystemBack = onSystemBack
-        )
         onDispose {
             popupLayout.disposeComposition()
             // Remove the window
             popupLayout.dismiss()
         }
-    }
-
-    SideEffect {
-        popupLayout.updateParameters(
-            onSystemBack = onSystemBack
-        )
     }
 }
 
@@ -95,7 +98,6 @@ internal fun FullscreenPopup(
  */
 @SuppressLint("ViewConstructor")
 private class PopupLayout(
-    private var onSystemBack: (() -> Unit)?,
     composeView: View,
     popupId: UUID
 ) : AbstractComposeView(composeView.context),
@@ -142,33 +144,6 @@ private class PopupLayout(
     @Composable
     override fun Content() {
         content()
-    }
-
-    @Suppress("ReturnCount")
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK && onSystemBack != null) {
-            if (keyDispatcherState == null) {
-                return super.dispatchKeyEvent(event)
-            }
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                val state = keyDispatcherState
-                state?.startTracking(event, this)
-                return true
-            } else if (event.action == KeyEvent.ACTION_UP) {
-                val state = keyDispatcherState
-                if (state != null && state.isTracking(event) && !event.isCanceled) {
-                    onSystemBack?.invoke()
-                    return true
-                }
-            }
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    fun updateParameters(
-        onSystemBack: (() -> Unit)?
-    ) {
-        this.onSystemBack = onSystemBack
     }
 
     fun dismiss() {
